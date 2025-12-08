@@ -16,7 +16,11 @@ let initialized = false;
 const init = async () => {
   if (initialized) return;
   if (process.env.USE_DB === 'true') {
-    await ensureSchema();
+    try {
+      await ensureSchema();
+    } catch (e) {
+      console.error('ensureSchema failed, continuing:', e?.message || e);
+    }
   }
   initialized = true;
 };
@@ -25,4 +29,3 @@ export default async (req, res) => {
   await init();
   app(req, res);
 };
-

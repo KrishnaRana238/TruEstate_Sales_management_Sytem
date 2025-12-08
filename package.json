@@ -1,6 +1,10 @@
 {
   "private": true,
   "type": "module",
+  "scripts": {
+    "build": "npm run vercel-build",
+    "vercel-build": "npm install --prefix frontend && npm run build --prefix frontend && rm -rf build && mkdir -p build && cp -R frontend/dist/* build/"
+  },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",

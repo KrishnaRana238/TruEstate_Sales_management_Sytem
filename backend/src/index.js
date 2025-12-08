@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import salesRoutes from './routes/salesRoutes.js';
 import { loadSalesData } from './services/dataService.js';
-import { ensureSchema } from './services/dbService.js';
+import { ensureSchema, clearSales, listDatabases, countSalesInDb, listCollections } from './services/dbService.js';
 
 const app = express();
 const DEFAULT_PORT = 3001;
@@ -18,6 +18,36 @@ app.use('/api/sales', salesRoutes);
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Retail Sales API is running' });
+});
+
+app.get('/api/_debug/dbs', async (req, res) => {
+  try {
+    const dbs = await listDatabases();
+    res.json({ dbs });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.get('/api/_debug/sales-count', async (req, res) => {
+  try {
+    const current = await countSalesInDb();
+    const names = ['truestate', 'test', 'sales', 'sample_mflix'];
+    const other = await Promise.all(names.map(async (n) => ({ name: n, count: await countSalesInDb(n) })));
+    res.json({ current, other });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.get('/api/_debug/collections', async (req, res) => {
+  try {
+    const dbName = req.query.db || undefined;
+    const names = await listCollections(dbName);
+    res.json({ db: dbName || 'current', collections: names });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
 });
 
 // Load data on startup
@@ -41,14 +71,20 @@ const startServer = (port) => {
 const useDb = process.env.USE_DB === 'true';
 
 if (useDb) {
-  ensureSchema()
-    .then(() => {
-      startServer(PORT);
-    })
-    .catch((error) => {
+  startServer(PORT);
+  (async () => {
+    try {
+      if (process.env.MONGODB_CLEAR_ON_START === 'true') {
+        console.warn('Clearing sales collection before start...');
+        await clearSales();
+        console.warn('Sales collection cleared');
+      }
+      await ensureSchema();
+      console.log('DB schema ensured');
+    } catch (error) {
       console.error('Failed to ensure DB schema:', error);
-      process.exit(1);
-    });
+    }
+  })();
 } else {
   loadSalesData()
     .then(() => {

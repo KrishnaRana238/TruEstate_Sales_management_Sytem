@@ -21,17 +21,25 @@ const getDb = async () => {
 };
 
 export const ensureSchema = async () => {
+  if ((process.env.MONGODB_SKIP_INDEXES || 'false') === 'true') return;
   const d = await getDb();
   const col = d.collection('sales');
-  await col.createIndex({ CustomerName: 1 });
-  await col.createIndex({ PhoneNumber: 1 });
-  await col.createIndex({ CustomerRegion: 1 });
-  await col.createIndex({ Gender: 1 });
-  await col.createIndex({ Age: 1 });
-  await col.createIndex({ ProductCategory: 1 });
-  await col.createIndex({ PaymentMethod: 1 });
-  await col.createIndex({ OrderStatus: 1 });
-  await col.createIndex({ Date: 1 });
+  const create = async (spec) => {
+    try {
+      await col.createIndex(spec);
+    } catch (e) {
+      // skip index errors (e.g., storage quota) to allow app to function
+    }
+  };
+  await create({ CustomerName: 1 });
+  await create({ PhoneNumber: 1 });
+  await create({ CustomerRegion: 1 });
+  await create({ Gender: 1 });
+  await create({ Age: 1 });
+  await create({ ProductCategory: 1 });
+  await create({ PaymentMethod: 1 });
+  await create({ OrderStatus: 1 });
+  await create({ Date: 1 });
 };
 
 export const importCSVToDB = async (csvPath) => {
@@ -187,4 +195,30 @@ export const clearSales = async () => {
   const d = await getDb();
   const col = d.collection('sales');
   await col.deleteMany({});
+};
+
+export const listDatabases = async () => {
+  if (!client) await getDb();
+  const admin = client.db().admin();
+  const res = await admin.listDatabases();
+  return res.databases || [];
+};
+
+export const countSalesInDb = async (databaseName) => {
+  if (!client) await getDb();
+  const d = databaseName ? client.db(databaseName) : await getDb();
+  const col = d.collection('sales');
+  try {
+    const n = await col.countDocuments({});
+    return n;
+  } catch (e) {
+    return 0;
+  }
+};
+
+export const listCollections = async (databaseName) => {
+  if (!client) await getDb();
+  const d = databaseName ? client.db(databaseName) : await getDb();
+  const cols = await d.listCollections().toArray();
+  return cols.map(c => c.name);
 };
