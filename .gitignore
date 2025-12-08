@@ -26,3 +26,5 @@ Thumbs.db
 
 # CSV dataset (ignored to avoid large file push issues)
 truestate_assignment_dataset.csv
+.vercel
+.env*.local

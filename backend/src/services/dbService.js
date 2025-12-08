@@ -1,228 +1,186 @@
-import mysql from 'mysql2/promise';
+import { MongoClient } from 'mongodb';
 import fs from 'fs';
 import path from 'path';
 import csv from 'csv-parser';
 
-let pool;
+let client;
+let db;
 
-const getPool = async () => {
-  if (pool) return pool;
-  pool = await mysql.createPool({
-    host: process.env.MYSQL_HOST || 'localhost',
-    port: process.env.MYSQL_PORT ? parseInt(process.env.MYSQL_PORT) : 3306,
-    user: process.env.MYSQL_USER || 'root',
-    password: process.env.MYSQL_PASSWORD || '',
-    database: process.env.MYSQL_DATABASE || 'truestate',
-    connectionLimit: 10,
-  });
-  return pool;
+const getDb = async () => {
+  if (db) return db;
+  const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+  const database = process.env.MONGODB_DATABASE || 'truestate';
+  client = new MongoClient(uri);
+  await client.connect();
+  db = client.db(database);
+  return db;
 };
 
 export const ensureSchema = async () => {
-  const p = await getPool();
-  const sql = `
-    CREATE TABLE IF NOT EXISTS sales (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      TransactionID VARCHAR(50),
-      Date DATE,
-      CustomerID VARCHAR(50),
-      CustomerName VARCHAR(255),
-      PhoneNumber VARCHAR(50),
-      Gender VARCHAR(20),
-      Age INT,
-      CustomerRegion VARCHAR(50),
-      CustomerType VARCHAR(50),
-      ProductID VARCHAR(50),
-      ProductName VARCHAR(255),
-      Brand VARCHAR(100),
-      ProductCategory VARCHAR(100),
-      Tags TEXT,
-      Quantity INT,
-      PricePerUnit DECIMAL(12,2),
-      DiscountPercentage DECIMAL(5,2),
-      TotalAmount DECIMAL(14,2),
-      FinalAmount DECIMAL(14,2),
-      PaymentMethod VARCHAR(50),
-      OrderStatus VARCHAR(50),
-      DeliveryType VARCHAR(50),
-      StoreID VARCHAR(50),
-      StoreLocation VARCHAR(100),
-      SalespersonID VARCHAR(50),
-      EmployeeName VARCHAR(255)
-    ) ENGINE=InnoDB;
-  `;
-  await p.query(sql);
+  const d = await getDb();
+  const col = d.collection('sales');
+  await col.createIndex({ CustomerName: 1 });
+  await col.createIndex({ PhoneNumber: 1 });
+  await col.createIndex({ CustomerRegion: 1 });
+  await col.createIndex({ Gender: 1 });
+  await col.createIndex({ Age: 1 });
+  await col.createIndex({ ProductCategory: 1 });
+  await col.createIndex({ PaymentMethod: 1 });
+  await col.createIndex({ OrderStatus: 1 });
+  await col.createIndex({ Date: 1 });
 };
 
 export const importCSVToDB = async (csvPath) => {
   await ensureSchema();
-  const p = await getPool();
-  const rows = [];
+  const d = await getDb();
+  const col = d.collection('sales');
+  const stream = fs.createReadStream(csvPath).pipe(csv());
+  let batch = [];
+  let pending = Promise.resolve();
   return new Promise((resolve, reject) => {
-    fs.createReadStream(csvPath)
-      .pipe(csv())
-      .on('data', (d) => {
-        rows.push([
-          d['Transaction ID'],
-          d['Date'],
-          d['Customer ID'],
-          d['Customer Name'],
-          d['Phone Number'],
-          d['Gender'],
-          parseInt(d['Age']) || 0,
-          d['Customer Region'],
-          d['Customer Type'],
-          d['Product ID'],
-          d['Product Name'],
-          d['Brand'],
-          d['Product Category'],
-          d['Tags'],
-          parseInt(d['Quantity']) || 0,
-          parseFloat(d['Price per Unit']) || 0,
-          parseFloat(d['Discount Percentage']) || 0,
-          parseFloat(d['Total Amount']) || 0,
-          parseFloat(d['Final Amount']) || 0,
-          d['Payment Method'],
-          d['Order Status'],
-          d['Delivery Type'],
-          d['Store ID'],
-          d['Store Location'],
-          d['Salesperson ID'],
-          d['Employee Name'],
-        ]);
-        if (rows.length >= 1000) {
-          const batch = rows.splice(0, rows.length);
-          p.query(
-            `INSERT INTO sales (TransactionID, Date, CustomerID, CustomerName, PhoneNumber, Gender, Age, CustomerRegion, CustomerType, ProductID, ProductName, Brand, ProductCategory, Tags, Quantity, PricePerUnit, DiscountPercentage, TotalAmount, FinalAmount, PaymentMethod, OrderStatus, DeliveryType, StoreID, StoreLocation, SalespersonID, EmployeeName)
-             VALUES ?`,
-            [batch]
-          ).catch(() => {});
-        }
-      })
-      .on('end', async () => {
-        if (rows.length > 0) {
-          await p.query(
-            `INSERT INTO sales (TransactionID, Date, CustomerID, CustomerName, PhoneNumber, Gender, Age, CustomerRegion, CustomerType, ProductID, ProductName, Brand, ProductCategory, Tags, Quantity, PricePerUnit, DiscountPercentage, TotalAmount, FinalAmount, PaymentMethod, OrderStatus, DeliveryType, StoreID, StoreLocation, SalespersonID, EmployeeName)
-             VALUES ?`,
-            [rows]
-          );
+    stream.on('data', (r) => {
+      batch.push({
+        TransactionID: r['Transaction ID'],
+        Date: r['Date'],
+        CustomerID: r['Customer ID'],
+        CustomerName: r['Customer Name'],
+        PhoneNumber: r['Phone Number'],
+        Gender: r['Gender'],
+        Age: parseInt(r['Age']) || 0,
+        CustomerRegion: r['Customer Region'],
+        CustomerType: r['Customer Type'],
+        ProductID: r['Product ID'],
+        ProductName: r['Product Name'],
+        Brand: r['Brand'],
+        ProductCategory: r['Product Category'],
+        Tags: r['Tags'],
+        Quantity: parseInt(r['Quantity']) || 0,
+        PricePerUnit: parseFloat(r['Price per Unit']) || 0,
+        DiscountPercentage: parseFloat(r['Discount Percentage']) || 0,
+        TotalAmount: parseFloat(r['Total Amount']) || 0,
+        FinalAmount: parseFloat(r['Final Amount']) || 0,
+        PaymentMethod: r['Payment Method'],
+        OrderStatus: r['Order Status'],
+        DeliveryType: r['Delivery Type'],
+        StoreID: r['Store ID'],
+        StoreLocation: r['Store Location'],
+        SalespersonID: r['Salesperson ID'],
+        EmployeeName: r['Employee Name'],
+      });
+      if (batch.length >= 1000) {
+        const docs = batch;
+        batch = [];
+        stream.pause();
+        pending = pending
+          .then(() => col.insertMany(docs))
+          .then(() => stream.resume())
+          .catch((e) => reject(e));
+      }
+    });
+    stream.on('end', async () => {
+      try {
+        await pending;
+        if (batch.length > 0) {
+          await col.insertMany(batch);
         }
         resolve(true);
-      })
-      .on('error', (e) => reject(e));
+      } catch (e) {
+        reject(e);
+      }
+    });
+    stream.on('error', (e) => reject(e));
   });
 };
 
-const buildWhere = (q) => {
-  const where = [];
-  const params = [];
+const buildQuery = (q) => {
+  const filter = {};
   if (q.search) {
-    where.push('(LOWER(CustomerName) LIKE ? OR LOWER(PhoneNumber) LIKE ?)');
-    const s = `%${q.search.toLowerCase()}%`;
-    params.push(s, s);
+    const s = q.search.toLowerCase();
+    filter.$or = [
+      { CustomerName: { $regex: s, $options: 'i' } },
+      { PhoneNumber: { $regex: s, $options: 'i' } },
+    ];
   }
-  if (q.regions) {
-    where.push(`CustomerRegion IN (${q.regions.map(() => '?').join(',')})`);
-    params.push(...q.regions);
-  }
-  if (q.genders) {
-    where.push(`Gender IN (${q.genders.map(() => '?').join(',')})`);
-    params.push(...q.genders);
-  }
-  if (q.minAge !== undefined) {
-    where.push('Age >= ?');
-    params.push(q.minAge);
-  }
-  if (q.maxAge !== undefined) {
-    where.push('Age <= ?');
-    params.push(q.maxAge);
-  }
-  if (q.categories) {
-    where.push(`ProductCategory IN (${q.categories.map(() => '?').join(',')})`);
-    params.push(...q.categories);
-  }
+  if (q.regions) filter.CustomerRegion = { $in: q.regions };
+  if (q.genders) filter.Gender = { $in: q.genders };
+  if (q.minAge !== undefined) filter.Age = { ...(filter.Age || {}), $gte: q.minAge };
+  if (q.maxAge !== undefined) filter.Age = { ...(filter.Age || {}), $lte: q.maxAge };
+  if (q.categories) filter.ProductCategory = { $in: q.categories };
   if (q.tags) {
-    const parts = q.tags.map(() => 'FIND_IN_SET(?, REPLACE(Tags, \' \', \'\')) > 0');
-    where.push(`(${parts.join(' OR ')})`);
-    params.push(...q.tags);
+    const ors = q.tags.map(t => ({ Tags: { $regex: `(^|,)\\s*${t}\\s*(,|$)`, $options: 'i' } }));
+    filter.$and = [...(filter.$and || []), { $or: ors }];
   }
-  if (q.paymentMethods) {
-    where.push(`PaymentMethod IN (${q.paymentMethods.map(() => '?').join(',')})`);
-    params.push(...q.paymentMethods);
-  }
-  if (q.orderStatus) {
-    where.push(`OrderStatus IN (${q.orderStatus.map(() => '?').join(',')})`);
-    params.push(...q.orderStatus);
-  }
-  if (q.startDate) {
-    where.push('Date >= ?');
-    params.push(q.startDate);
-  }
-  if (q.endDate) {
-    where.push('Date <= ?');
-    params.push(q.endDate);
-  }
-  return { where, params };
+  if (q.paymentMethods) filter.PaymentMethod = { $in: q.paymentMethods };
+  if (q.orderStatus) filter.OrderStatus = { $in: q.orderStatus };
+  if (q.startDate) filter.Date = { ...(filter.Date || {}), $gte: q.startDate };
+  if (q.endDate) filter.Date = { ...(filter.Date || {}), $lte: q.endDate };
+  return filter;
 };
 
 export const querySales = async (q) => {
-  const p = await getPool();
-  const { where, params } = buildWhere(q);
-  let orderBy = 'CustomerName ASC';
-  if (q.sortBy === 'date') orderBy = `Date ${q.sortOrder === 'desc' ? 'DESC' : 'ASC'}`;
-  if (q.sortBy === 'quantity') orderBy = `Quantity ${q.sortOrder === 'desc' ? 'DESC' : 'ASC'}`;
-  if (q.sortBy === 'customerName') orderBy = `CustomerName ${q.sortOrder === 'desc' ? 'DESC' : 'ASC'}`;
+  const d = await getDb();
+  const col = d.collection('sales');
+  const filter = buildQuery(q);
+  let sort = { CustomerName: 1 };
+  if (q.sortBy === 'date') sort = { Date: q.sortOrder === 'desc' ? -1 : 1 };
+  if (q.sortBy === 'quantity') sort = { Quantity: q.sortOrder === 'desc' ? -1 : 1 };
+  if (q.sortBy === 'customerName') sort = { CustomerName: q.sortOrder === 'desc' ? -1 : 1 };
   const page = parseInt(q.page) || 1;
   const pageSize = parseInt(q.pageSize) || 10;
-  const offset = (page - 1) * pageSize;
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  const [rows] = await p.query(
-    `SELECT * FROM sales ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
-    [...params, pageSize, offset]
-  );
-  const [[countRow]] = await p.query(
-    `SELECT COUNT(*) as cnt FROM sales ${whereSql}`,
-    params
-  );
+  const skip = (page - 1) * pageSize;
+  const cursor = col.find(filter).sort(sort).skip(skip).limit(pageSize);
+  const rows = await cursor.toArray();
+  const total = await col.countDocuments(filter);
   return {
     data: rows,
     pagination: {
       currentPage: page,
       pageSize,
-      totalItems: countRow.cnt,
-      totalPages: Math.ceil(countRow.cnt / pageSize),
-      hasNextPage: offset + rows.length < countRow.cnt,
+      totalItems: total,
+      totalPages: Math.ceil(total / pageSize),
+      hasNextPage: skip + rows.length < total,
       hasPreviousPage: page > 1,
     },
   };
 };
 
 export const getFilterOptionsDB = async () => {
-  const p = await getPool();
-  const [regions] = await p.query('SELECT DISTINCT CustomerRegion AS v FROM sales WHERE CustomerRegion IS NOT NULL');
-  const [genders] = await p.query('SELECT DISTINCT Gender AS v FROM sales WHERE Gender IS NOT NULL');
-  const [categories] = await p.query('SELECT DISTINCT ProductCategory AS v FROM sales WHERE ProductCategory IS NOT NULL');
-  const [paymentMethods] = await p.query('SELECT DISTINCT PaymentMethod AS v FROM sales WHERE PaymentMethod IS NOT NULL');
-  const [[minAgeRow]] = await p.query('SELECT MIN(Age) AS minAge FROM sales');
-  const [[maxAgeRow]] = await p.query('SELECT MAX(Age) AS maxAge FROM sales');
-  const [[minDateRow]] = await p.query('SELECT MIN(Date) AS minDate FROM sales');
-  const [[maxDateRow]] = await p.query('SELECT MAX(Date) AS maxDate FROM sales');
-  const [tagsRows] = await p.query('SELECT Tags FROM sales WHERE Tags IS NOT NULL LIMIT 10000');
+  const d = await getDb();
+  const col = d.collection('sales');
+  const regions = await col.distinct('CustomerRegion', { CustomerRegion: { $ne: null } });
+  const genders = await col.distinct('Gender', { Gender: { $ne: null } });
+  const categories = await col.distinct('ProductCategory', { ProductCategory: { $ne: null } });
+  const paymentMethods = await col.distinct('PaymentMethod', { PaymentMethod: { $ne: null } });
+  const agg = await col.aggregate([
+    { $group: {
+      _id: null,
+      minAge: { $min: '$Age' },
+      maxAge: { $max: '$Age' },
+      minDate: { $min: '$Date' },
+      maxDate: { $max: '$Date' },
+    } },
+  ]).toArray();
+  const stats = agg[0] || {};
+  const tagsDocs = await col.find({ Tags: { $ne: null } }).project({ Tags: 1 }).limit(10000).toArray();
   const tagsSet = new Set();
-  for (const r of tagsRows) {
-    const parts = String(r.Tags).split(',').map(t => t.trim()).filter(Boolean);
-    for (const t of parts) tagsSet.add(t);
+  for (const r of tagsDocs) {
+    String(r.Tags).split(',').map(t => t.trim()).filter(Boolean).forEach(t => tagsSet.add(t));
   }
   return {
-    regions: regions.map(r => r.v).filter(Boolean).sort(),
-    genders: genders.map(r => r.v).filter(Boolean).sort(),
-    categories: categories.map(r => r.v).filter(Boolean).sort(),
+    regions: regions.filter(Boolean).sort(),
+    genders: genders.filter(Boolean).sort(),
+    categories: categories.filter(Boolean).sort(),
     tags: Array.from(tagsSet).sort(),
-    paymentMethods: paymentMethods.map(r => r.v).filter(Boolean).sort(),
-    minAge: minAgeRow.minAge || 0,
-    maxAge: maxAgeRow.maxAge || 0,
-    minDate: minDateRow.minDate || '',
-    maxDate: maxDateRow.maxDate || '',
+    paymentMethods: paymentMethods.filter(Boolean).sort(),
+    minAge: stats.minAge || 0,
+    maxAge: stats.maxAge || 0,
+    minDate: stats.minDate || '',
+    maxDate: stats.maxDate || '',
   };
 };
 
+export const clearSales = async () => {
+  const d = await getDb();
+  const col = d.collection('sales');
+  await col.deleteMany({});
+};

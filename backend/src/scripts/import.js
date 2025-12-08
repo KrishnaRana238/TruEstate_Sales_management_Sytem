@@ -1,5 +1,4 @@
-import mysql from 'mysql2/promise';
-import { importCSVToDB } from '../services/dbService.js';
+import { importCSVToDB, clearSales } from '../services/dbService.js';
 import fs from 'fs';
 
 const required = (name) => {
@@ -17,26 +16,19 @@ const main = async () => {
     console.error(`CSV not found at ${csvPath}`);
     process.exit(1);
   }
-
-  const host = process.env.MYSQL_HOST || 'localhost';
-  const port = process.env.MYSQL_PORT ? parseInt(process.env.MYSQL_PORT) : 3306;
-  const user = process.env.MYSQL_USER || 'root';
-  const password = process.env.MYSQL_PASSWORD || '';
-  const database = process.env.MYSQL_DATABASE || 'truestate';
-  const allowCreate = (process.env.MYSQL_ALLOW_CREATE || 'true') === 'true';
-
-  if (allowCreate) {
+  if (!process.env.MONGODB_URI) {
+    console.error('Missing env: MONGODB_URI');
+    process.exit(1);
+  }
+  if ((process.env.MONGODB_DROP_BEFORE_IMPORT || 'false') === 'true') {
     try {
-      const conn = await mysql.createConnection({ host, port, user, password });
-      await conn.query(`CREATE DATABASE IF NOT EXISTS \`${database}\``);
-      await conn.end();
-      console.log(`Database ensured: ${database}`);
+      console.log('Clearing existing sales collection...');
+      await clearSales();
+      console.log('Sales collection cleared');
     } catch (e) {
-      console.error('Failed to ensure database:', e.message);
-      // Proceed anyway in case the database already exists but CREATE is restricted
+      console.error('Failed to clear sales collection:', e);
+      process.exit(1);
     }
-  } else {
-    console.log('Skipping database creation as MYSQL_ALLOW_CREATE is false');
   }
 
   try {
