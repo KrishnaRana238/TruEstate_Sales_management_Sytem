@@ -27,7 +27,7 @@ const Sidebar = ({ onNavigate }) => {
         <div className="logo">K</div>
         <div className="user-info" onClick={toggleAll}>
           <div>
-            <div className="user-name">Anurag Yadav</div>
+            <div className="user-name">Krishna Rana </div>
             <div className="user-role">Admin</div>
           </div>
           <div className="dropdown-arrow">▼</div>

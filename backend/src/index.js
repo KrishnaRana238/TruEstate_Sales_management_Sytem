@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import salesRoutes from './routes/salesRoutes.js';
 import { loadSalesData } from './services/dataService.js';
+import { ensureSchema } from './services/dbService.js';
 
 const app = express();
 const DEFAULT_PORT = 3001;
@@ -37,11 +38,24 @@ const startServer = (port) => {
   });
 };
 
-loadSalesData()
-  .then(() => {
-    startServer(PORT);
-  })
-  .catch((error) => {
-    console.error('Failed to load data:', error);
-    process.exit(1);
-  });
+const useDb = process.env.USE_DB === 'true';
+
+if (useDb) {
+  ensureSchema()
+    .then(() => {
+      startServer(PORT);
+    })
+    .catch((error) => {
+      console.error('Failed to ensure DB schema:', error);
+      process.exit(1);
+    });
+} else {
+  loadSalesData()
+    .then(() => {
+      startServer(PORT);
+    })
+    .catch((error) => {
+      console.error('Failed to load data:', error);
+      process.exit(1);
+    });
+}

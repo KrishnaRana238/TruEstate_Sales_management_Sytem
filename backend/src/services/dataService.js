@@ -19,8 +19,9 @@ export const loadSalesData = () => {
       resolve(salesData);
       return;
     }
-
-    const csvPath = path.join(__dirname, '../../../truestate_assignment_dataset.csv');
+    const envPath = process.env.DATASET_PATH;
+    const defaultPath = path.join(__dirname, '../../../truestate_assignment_dataset.csv');
+    const csvPath = envPath && envPath.trim() !== '' ? envPath : defaultPath;
     const results = [];
 
     fs.createReadStream(csvPath)
@@ -47,6 +48,9 @@ export const loadSalesData = () => {
       })
       .on('error', (error) => {
         console.error('Error loading CSV:', error);
+        if (csvPath === defaultPath && !fs.existsSync(defaultPath)) {
+          console.error('Dataset file not found. Set DATASET_PATH to the CSV location.');
+        }
         reject(error);
       });
   });

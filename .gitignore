@@ -24,6 +24,5 @@ build/
 .DS_Store
 Thumbs.db
 
-# CSV dataset (if too large, but keep for now)
-# truestate_assignment_dataset.csv
-
+# CSV dataset (ignored to avoid large file push issues)
+truestate_assignment_dataset.csv

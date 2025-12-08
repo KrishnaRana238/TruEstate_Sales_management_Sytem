@@ -1,5 +1,6 @@
 import { getAllSalesData, getFilterOptions } from '../services/dataService.js';
 import { applySearch, applyFilters, applySorting, applyPagination } from '../utils/filterUtils.js';
+import { querySales, getFilterOptionsDB } from '../services/dbService.js';
 
 /**
  * Get sales data with search, filters, sorting, and pagination
@@ -24,7 +25,55 @@ export const getSales = async (req, res) => {
       endDate,
     } = req.query;
 
-    // Get all data
+    if (process.env.USE_DB === 'true') {
+      const result = await querySales({
+        search,
+        page,
+        pageSize,
+        sortBy,
+        sortOrder,
+        regions: regions ? (Array.isArray(regions) ? regions : [regions]) : undefined,
+        genders: genders ? (Array.isArray(genders) ? genders : [genders]) : undefined,
+        minAge: minAge !== undefined && minAge !== null && minAge !== '' ? parseInt(minAge) : undefined,
+        maxAge: maxAge !== undefined && maxAge !== null && maxAge !== '' ? parseInt(maxAge) : undefined,
+        categories: categories ? (Array.isArray(categories) ? categories : [categories]) : undefined,
+        tags: tags ? (Array.isArray(tags) ? tags : [tags]) : undefined,
+        paymentMethods: paymentMethods ? (Array.isArray(paymentMethods) ? paymentMethods : [paymentMethods]) : undefined,
+        orderStatus: orderStatus ? (Array.isArray(orderStatus) ? orderStatus : [orderStatus]) : undefined,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+      });
+      const mapped = result.data.map((r) => ({
+        'Transaction ID': r.TransactionID,
+        Date: r.Date,
+        'Customer ID': r.CustomerID,
+        'Customer Name': r.CustomerName,
+        'Phone Number': r.PhoneNumber,
+        Gender: r.Gender,
+        Age: r.Age,
+        'Customer Region': r.CustomerRegion,
+        'Customer Type': r.CustomerType,
+        'Product ID': r.ProductID,
+        'Product Name': r.ProductName,
+        Brand: r.Brand,
+        'Product Category': r.ProductCategory,
+        Tags: r.Tags,
+        Quantity: r.Quantity,
+        'Price per Unit': Number(r.PricePerUnit),
+        'Discount Percentage': Number(r.DiscountPercentage),
+        'Total Amount': Number(r.TotalAmount),
+        'Final Amount': Number(r.FinalAmount),
+        'Payment Method': r.PaymentMethod,
+        'Order Status': r.OrderStatus,
+        'Delivery Type': r.DeliveryType,
+        'Store ID': r.StoreID,
+        'Store Location': r.StoreLocation,
+        'Salesperson ID': r.SalespersonID,
+        'Employee Name': r.EmployeeName,
+      }));
+      return res.json({ success: true, data: mapped, pagination: result.pagination });
+    }
+
     let data = getAllSalesData();
 
     // Apply search
@@ -102,7 +151,7 @@ export const getSales = async (req, res) => {
  */
 export const getFilters = async (req, res) => {
   try {
-    const options = getFilterOptions();
+    const options = process.env.USE_DB === 'true' ? await getFilterOptionsDB() : getFilterOptions();
     res.json({
       success: true,
       data: options,
