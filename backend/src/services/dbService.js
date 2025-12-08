@@ -9,7 +9,11 @@ let db;
 const getDb = async () => {
   if (db) return db;
   const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017';
-  const database = process.env.MONGODB_DATABASE || 'truestate';
+  const pickDbFromUri = (u) => {
+    const m = u.match(/^mongodb(?:\+srv)?:\/\/[^/]+\/([^?]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  };
+  const database = process.env.MONGODB_DATABASE || pickDbFromUri(uri) || 'truestate';
   client = new MongoClient(uri);
   await client.connect();
   db = client.db(database);
