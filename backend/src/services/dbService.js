@@ -133,6 +133,7 @@ export const querySales = async (q) => {
   const d = await getDb();
   const col = d.collection('sales');
   const filter = buildQuery(q);
+  console.log('MongoDB Query:', JSON.stringify(filter));
   let sort = { CustomerName: 1 };
   if (q.sortBy === 'date') sort = { Date: q.sortOrder === 'desc' ? -1 : 1 };
   if (q.sortBy === 'quantity') sort = { Quantity: q.sortOrder === 'desc' ? -1 : 1 };

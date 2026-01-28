@@ -7,6 +7,7 @@ import { querySales, getFilterOptionsDB } from '../services/dbService.js';
  */
 export const getSales = async (req, res) => {
   try {
+    console.log('getSales called with query:', JSON.stringify(req.query));
     const {
       search = '',
       page = 1,
