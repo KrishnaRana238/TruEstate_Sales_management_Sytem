@@ -9,7 +9,13 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  paramsSerializer: params => qs.stringify(params, { arrayFormat: 'brackets' })
+  paramsSerializer: params => qs.stringify(params, { arrayFormat: 'repeat' })
+});
+
+// Add request interceptor for debugging
+api.interceptors.request.use(request => {
+  console.log('Starting Request:', request.method.toUpperCase(), request.url, request.params);
+  return request;
 });
 
 /**
