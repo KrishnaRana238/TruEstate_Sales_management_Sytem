@@ -98,6 +98,23 @@ export const applyFilters = (data, filters) => {
   return filtered;
 };
 
+export const parseDate = (dateStr) => {
+  if (!dateStr) return '';
+  // Already ISO?
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  
+  // Try parsing
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return dateStr; // Fallback
+};
+
+
 /**
  * Apply sorting
  */

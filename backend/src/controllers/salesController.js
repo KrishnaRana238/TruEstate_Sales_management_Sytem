@@ -24,11 +24,14 @@ export const getSales = async (req, res) => {
       orderStatus,
       startDate,
       endDate,
-    } = req.query;
+            } = req.query;
 
-    if (process.env.USE_DB === 'true') {
-      const result = await querySales({
-        search,
+            const useDb = process.env.USE_DB?.toLowerCase() === 'true';
+
+            if (useDb) {
+              console.log('Using Database for sales query');
+              const result = await querySales({
+                search,
         page,
         pageSize,
         sortBy,
@@ -44,6 +47,8 @@ export const getSales = async (req, res) => {
         startDate: startDate || undefined,
         endDate: endDate || undefined,
       });
+      console.log(`DB Query executed. Results found: ${result.data.length}, Total: ${result.pagination.totalItems}`);
+      
       const mapped = result.data.map((r) => ({
         'Transaction ID': r.TransactionID,
         Date: r.Date,
@@ -75,7 +80,9 @@ export const getSales = async (req, res) => {
       return res.json({ success: true, data: mapped, pagination: result.pagination });
     }
 
+    console.log('Using In-Memory data (USE_DB != true)');
     let data = getAllSalesData();
+    console.log(`In-memory data size: ${data.length}`);
 
     // Apply search
     if (search) {
@@ -152,7 +159,8 @@ export const getSales = async (req, res) => {
  */
 export const getFilters = async (req, res) => {
   try {
-    const options = process.env.USE_DB === 'true' ? await getFilterOptionsDB() : getFilterOptions();
+    const useDb = process.env.USE_DB?.toLowerCase() === 'true';
+    const options = useDb ? await getFilterOptionsDB() : getFilterOptions();
     res.json({
       success: true,
       data: options,

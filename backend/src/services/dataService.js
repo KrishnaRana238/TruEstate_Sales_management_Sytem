@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import csv from 'csv-parser';
+import { parseDate } from '../utils/filterUtils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,7 +37,7 @@ export const loadSalesData = () => {
           'Discount Percentage': parseFloat(data['Discount Percentage']) || 0,
           'Total Amount': parseFloat(data['Total Amount']) || 0,
           'Final Amount': parseFloat(data['Final Amount']) || 0,
-          Date: data.Date || '',
+          Date: parseDate(data.Date),
         };
         results.push(parsedData);
       })

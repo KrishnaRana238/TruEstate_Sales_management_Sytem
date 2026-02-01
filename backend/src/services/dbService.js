@@ -2,6 +2,7 @@ import { MongoClient } from 'mongodb';
 import fs from 'fs';
 import path from 'path';
 import csv from 'csv-parser';
+import { parseDate } from '../utils/filterUtils.js';
 
 let client;
 let db;
@@ -53,7 +54,7 @@ export const importCSVToDB = async (csvPath) => {
     stream.on('data', (r) => {
       batch.push({
         TransactionID: r['Transaction ID'],
-        Date: r['Date'],
+        Date: parseDate(r['Date']),
         CustomerID: r['Customer ID'],
         CustomerName: r['Customer Name'],
         PhoneNumber: r['Phone Number'],
